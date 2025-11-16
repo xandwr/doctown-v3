@@ -86,7 +86,7 @@
 
 ---
 
-## Phase 4: Builder (Rust) - Minimal Version (Day 4-8)
+## Phase 4: Builder (Rust) - Minimal Version (Day 4-8) ✅ COMPLETE
 
 **Goal:** Build the smallest thing that produces a .docpack file.
 
@@ -94,29 +94,60 @@
 
 ### Tasks
 
-1. **Basic file structure (Day 4-5)**
-   - Accept input params from RunPod
-   - Clone Git repo to temp directory
-   - Walk file tree, find source files
-   - Extract basic metadata (no LLM yet)
+1. **Basic file structure (Day 4-5)** ✅ DONE
+   - Accept input params from RunPod via `RUNPOD_INPUT` environment variable
+   - Clone Git repo to temp directory using `git2` library
+   - Walk file tree with `walkdir`, find source files
+   - Extract symbols using tree-sitter parsers (Rust, Python, TypeScript, JavaScript)
+   - Implemented in: `/builder/src/git.rs`, `/builder/src/parser.rs`
 
-2. **Minimal docpack output (Day 5-6)**
-   - Create `manifest.json` with repo metadata
-   - Create `symbols.json` with basic file/function list
-   - Skip LLM documentation for now (just placeholders)
-   - ZIP everything into .docpack format
+2. **Minimal docpack output (Day 5-6)** ✅ DONE
+   - Create `manifest.json` with repo metadata, language summary, and statistics
+   - Create `symbols.json` with extracted symbols (functions, classes, structs, etc.)
+   - Generate placeholder documentation for each symbol
+   - ZIP everything into .docpack format using `zip` crate
+   - Implemented in: `/builder/src/types.rs`, `/builder/src/docpack.rs`
 
-3. **Upload to backend (Day 6-7)**
-   - POST .docpack file to `/api/jobs/complete`
+3. **Upload to backend (Day 6-7)** ✅ DONE
+   - POST .docpack file to `/api/jobs/complete` using multipart form data
    - Include job_id in request
+   - Authenticate with `DOCTOWN_BUILDER_SHARED_SECRET`
+   - Implemented in: `/builder/src/uploader.rs`
 
-4. **Add LLM later (Day 8+)**
+4. **Main entry point** ✅ DONE
+   - Orchestrates the full build pipeline (clone → parse → generate → zip → upload)
+   - Progress logging for each stage
+   - Comprehensive error handling
+   - Implemented in: `/builder/src/main.rs`
+
+5. **Add LLM later (Day 8+)** 🔄 TODO
    - Once flow works end-to-end, add OpenAI calls
    - Generate real documentation in batches
+   - Skeleton exists in `/builder/src/agent.rs`
+
+### Implementation Details
+
+**Dependencies Added:**
+- `git2` - Git repository cloning and operations
+- `tree-sitter` + language parsers - Source code parsing
+- `walkdir` - File system traversal
+- `zip` - Archive creation
+- `reqwest` - HTTP client for API uploads
+- `anyhow` - Error handling
+- `chrono` - Timestamp generation
+- `tempfile` - Temporary file/directory management
+
+**Modules Created:**
+- `git.rs` - Repository cloning with GitHub token authentication
+- `parser.rs` - Multi-language source code analysis with tree-sitter
+- `types.rs` - Data structures matching DOCPACK_SPEC.md format
+- `docpack.rs` - ZIP archive creation
+- `uploader.rs` - HTTP multipart upload to backend
+- `main.rs` - Pipeline orchestration
 
 ---
 
-## Phase 5: File Upload & Storage (Day 7-9)
+## Phase 5: File Upload & Storage (Day 7-9) ✅ COMPLETE
 
 **Goal:** Handle builder uploads and store in R2.
 
@@ -124,21 +155,25 @@
 
 ### Tasks
 
-1. **Create `/api/jobs/complete` endpoint**
+1. **Create `/api/jobs/complete` endpoint** ✅ DONE
    - Accept multipart form with job_id and .docpack file
    - Verify job exists and is in `building` status
-   - Upload file to R2 bucket
+   - Upload file to R2 bucket using AWS S3 SDK
    - Store file URL in `docpacks` table
    - Update job status to `completed`
+   - Authenticate requests with `DOCTOWN_BUILDER_SHARED_SECRET`
+   - Implemented in: `/website/src/routes/api/jobs/complete/+server.ts`
 
-2. **R2 upload helper**
-   ```typescript
-   // /website/src/lib/r2.ts
-   export async function uploadDocpack(
-     file: File,
-     jobId: string
-   ): Promise<string> // Returns R2 URL
-   ```
+2. **R2 integration** ✅ DONE
+   - Added `@aws-sdk/client-s3` dependency to `package.json`
+   - Configured S3 client for Cloudflare R2 compatibility
+   - Environment variables: `BUCKET_ACCESS_KEY_ID`, `BUCKET_SECRET_ACCESS_KEY`, `BUCKET_S3_ENDPOINT`
+   - Auto-generate unique filenames: `{job_id}-{timestamp}.docpack`
+   - Extract repository metadata and populate `docpacks` table
+
+3. **Environment configuration** ✅ DONE
+   - Added `DOCTOWN_BUILDER_SHARED_SECRET` to `.env.example`
+   - Updated for both builder and website environments
 
 ---
 

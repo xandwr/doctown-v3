@@ -3,15 +3,15 @@
 Summary
 -------
 
-This document outlines the end-to-end architecture and implementation plan for the Doctown pipeline: how a user triggers documentation generation for a Rust repository, how the Rust builder parses and generates docs, and how the website accepts and serves the resulting `.docpack` artifact.
+This document outlines the end-to-end architecture and implementation plan for the Doctown pipeline: how a user triggers documentation generation for a Rust repository via a GitHub App webhook, how the serverless Rust builder parses and generates docs, and how the website accepts and serves the resulting `.docpack` artifact.
 
 Architecture Overview
 ---------------------
 
 Stack:
 
-- GitHub App (device flow) for authentication
-- GitHub Actions for on-repo execution
+- GitHub App (webhooks) for triggering builds
+- RunPod serverless CPU pod for builder execution
 - Rust builder (pre-compiled binary) for parsing and doc generation
 - OpenAI (via `llm` crate) for text generation
 - Cloudflare R2 (object storage) for storing `.docpack` files
@@ -19,16 +19,24 @@ Stack:
 
 High-level flow:
 
-1. User authenticates via GitHub App on `doctown.dev`.
-2. User selects a repository and clicks **Create Docpack**.
-3. Website backend dispatches a GitHub Action with an OIDC token.
-4. The Action downloads the pre-built `doctown` binary from GitHub releases.
-5. The binary parses Rust files (tree-sitter), extracting rich symbols.
-6. The binary batches symbols (≤ 16k token batches) and sends them to the LLM in parallel.
-7. The binary builds a `.docpack` ZIP containing manifest, symbols, and generated docs.
-8. The Action uploads the `.docpack` to the website API.
-9. The website uploads the file to R2 and marks the docpack complete.
-10. The user sees the docpack in the commons UI.
+1. User installs the Doctown GitHub App on their repository.
+2. GitHub sends `installation_repositories` or `push` webhook to SvelteKit backend.
+3. Backend receives the webhook and tells RunPod CPU "start job for repo XYZ".
+4. RunPod serverless CPU pod (builder) starts:
+   - Pulls the repo using the GitHub App installation token
+   - Parses Rust files (tree-sitter), extracting rich symbols
+   - Batches symbols (≤ 16k token batches) and sends them to the LLM in parallel
+   - Packages a `.docpack` ZIP containing manifest, symbols, and generated docs
+   - Streams the result back to the SvelteKit API
+5. SvelteKit API stores the `.docpack` in R2.
+6. The docpack appears in the commons UI.
+
+**Zero repo pollution:**
+- No GitHub Actions required
+- No device flow authentication
+- No workflows or `.github/` files in user repos
+- No `doctown.yml` config files
+- Zero setup for users beyond installing the GitHub App
 
 Phases
 ------
@@ -48,7 +56,13 @@ Phase 1 — Repository Setup & Infrastructure
      - Keep `Cargo.toml`, `.env`, `src/` and move `DOCPACK_SPEC.md` here.
      - Add `LICENSE` (MIT) and `README.md`.
 
-2. **Configure builder release pipeline** — create `.github/workflows/release.yml` in `doctown-builder`:
+2. **Configure RunPod serverless CPU pod**
+   - Create a RunPod template with the pre-compiled `doctown` binary
+   - Configure as a serverless CPU pod (not GPU)
+   - Set up API endpoint to accept job requests from SvelteKit backend
+   - Configure environment variables: GitHub App credentials, OpenAI key
+
+3. **Configure builder release pipeline** — create `.github/workflows/release.yml` in `doctown-builder`:
 
 ```yaml
 name: Release Builder Binary
@@ -128,6 +142,7 @@ anyhow = "1.0"
 clap = { version = "4.5", features = ["derive"] }
 uuid = { version = "1.10", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
+octocrab = "0.40"  # For GitHub API integration
 ```
 
 ### 2.2 Module structure
@@ -135,6 +150,7 @@ chrono = { version = "0.4", features = ["serde"] }
 Create the following files in `src/`:
 
 - `main.rs` — CLI entry point, orchestrates pipeline
+- `github.rs` — GitHub API integration, repo cloning using installation token
 - `parser.rs` — tree-sitter integration, Rust file parsing
 - `extractor.rs` — AST traversal, symbol extraction (rich format)
 - `batcher.rs` — token counting, batching symbols for LLM
@@ -155,29 +171,36 @@ use anyhow::Result;
 #[command(name = "doctown")]
 #[command(about = "Generate .docpack documentation from Rust codebases")]
 struct Cli {
-    /// Path to the repository to document
-    #[arg(short, long, default_value = ".")]
-    repo_path: String,
+    /// Repository owner/name (e.g., "rust-lang/rust")
+    #[arg(short, long)]
+    repo: String,
+
+    /// GitHub App installation token
+    #[arg(short, long)]
+    token: String,
 
     /// API endpoint for doctown backend
     #[arg(short, long)]
     api_url: String,
 
-    /// OIDC token for authentication
-    #[arg(short, long)]
-    token: String,
-
     /// Job ID from doctown
     #[arg(short, long)]
     job_id: String,
+
+    /// Git ref (branch, tag, or commit SHA)
+    #[arg(short = 'b', long, default_value = "main")]
+    git_ref: String,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
+    println!("🔐 Cloning repository using GitHub App...");
+    let repo_path = github::clone_repo(&cli.repo, &cli.token, &cli.git_ref).await?;
+
     println!("🔍 Parsing Rust files...");
-    let symbols = parser::parse_repository(&cli.repo_path)?;
+    let symbols = parser::parse_repository(&repo_path)?;
 
     println!("📊 Extracted {} symbols", symbols.len());
 
@@ -190,7 +213,7 @@ async fn main() -> Result<()> {
     println!("📄 Creating .docpack...");
     let docpack_path = packager::create_docpack(&symbols, &docs, &cli.job_id)?;
 
-    println!("☁️ Uploading to doctown...");
+    println!("☁️ Streaming to doctown API...");
     uploader::upload_docpack(&cli.api_url, &cli.token, &cli.job_id, &docpack_path).await?;
 
     println!("✅ Docpack generated successfully!");
@@ -199,6 +222,12 @@ async fn main() -> Result<()> {
 ```
 
 Other modules (high-level expectations):
+
+- `github.rs`
+  - Use `octocrab` to authenticate with GitHub App installation token.
+  - Clone the specified repository to a temporary directory.
+  - Checkout the specified git ref (branch, tag, or commit).
+  - Return the local path to the cloned repository.
 
 - `parser.rs`
   - Use tree-sitter with `tree-sitter-rust`.
@@ -282,130 +311,78 @@ pub struct RepoInfo {
 }
 ```
 
-Phase 3 — GitHub Action Workflow
+Phase 3 — Website API Endpoints
 --------------------------------
 
-### 3.1 Action template
+### 3.1 SvelteKit routes
 
-File: `.github/workflows/doctown.yml` (installed in user repos):
+Create these files in `website/src/routes/api/`:
 
-```yaml
-name: Generate Docpack
+- `webhook/+server.ts` — GitHub App webhook handler
+- `docpack/upload/+server.ts` — Receive `.docpack` from builder
+- `docpack/complete/+server.ts` — Mark job as complete
 
-on:
-  workflow_dispatch:
-    inputs:
-      job_id:
-        description: 'Doctown job ID'
-        required: true
-      api_url:
-        description: 'Doctown API URL'
-        required: true
-        default: 'https://doctown.dev'
-
-permissions:
-  contents: read
-  id-token: write  # For OIDC token
-
-jobs:
-  generate:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-
-      - name: Download doctown builder
-        run: |
-          curl -L https://github.com/yourusername/doctown-builder/releases/latest/download/doctown-linux-x64 -o doctown
-          chmod +x doctown
-
-      - name: Get OIDC token
-        id: oidc
-        run: |
-          TOKEN=$(curl -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=doctown" | jq -r .value)
-          echo "token=$TOKEN" >> $GITHUB_OUTPUT
-
-      - name: Generate docpack
-        env:
-          OPENAI_API_KEY: ${{ secrets.DOCTOWN_OPENAI_KEY }}
-        run: |
-          ./doctown \
-            --repo-path . \
-            --api-url ${{ inputs.api_url }} \
-            --token ${{ steps.oidc.outputs.token }} \
-            --job-id ${{ inputs.job_id }}
-
-      - name: Notify completion
-        if: always()
-        run: |
-          curl -X POST ${{ inputs.api_url }}/api/docpack/complete \
-            -H "Authorization: Bearer ${{ steps.oidc.outputs.token }}" \
-            -H "Content-Type: application/json" \
-            -d '{"job_id": "${{ inputs.job_id }}", "status": "${{ job.status }}"}'
-```
-
-Phase 4 — Website API Endpoints
---------------------------------
-
-### 4.1 SvelteKit routes
-
-Create these files in `website/src/routes/api/docpack/`:
-
-- `create/+server.ts`
-- `upload/+server.ts`
-- `complete/+server.ts`
-
-`create/+server.ts` (simplified):
+`webhook/+server.ts`:
 
 ```ts
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
+import { verifyGitHubWebhook } from '$lib/github';
+import { triggerRunPodJob } from '$lib/runpod';
 
-export const POST: RequestHandler = async ({ request, locals }) => {
-  const session = locals.session;
-  if (!session) {
-    return json({ error: 'Unauthorized' }, { status: 401 });
+export const POST: RequestHandler = async ({ request }) => {
+  const payload = await request.text();
+  const signature = request.headers.get('x-hub-signature-256');
+
+  if (!verifyGitHubWebhook(payload, signature)) {
+    return json({ error: 'Invalid signature' }, { status: 401 });
   }
 
-  const { repo_owner, repo_name, branch = 'main' } = await request.json();
-  const job_id = crypto.randomUUID();
+  const event = JSON.parse(payload);
+  const eventType = request.headers.get('x-github-event');
 
-  const dispatch_url = `https://api.github.com/repos/${repo_owner}/${repo_name}/actions/workflows/doctown.yml/dispatches`;
+  // Handle installation or push events
+  if (eventType === 'installation_repositories' || eventType === 'push') {
+    const job_id = crypto.randomUUID();
 
-  const response = await fetch(dispatch_url, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${session.github_token}`,
-      Accept: 'application/vnd.github+json',
-      'X-GitHub-Api-Version': '2022-11-28'
-    },
-    body: JSON.stringify({
-      ref: branch,
-      inputs: {
-        job_id,
-        api_url:
-          process.env.NODE_ENV === 'production'
-            ? 'https://doctown.dev'
-            : 'http://localhost:5173'
-      }
-    })
-  });
+    const repoFullName =
+      eventType === 'push'
+        ? event.repository.full_name
+        : event.repositories_added[0]?.full_name;
+        // I CAN do this for MVP... but GitHub might notify of multiple additions at once so it should be made more robust in prod.
 
-  if (!response.ok) {
-    return json({ error: 'Failed to dispatch action' }, { status: 500 });
+    const gitRef =
+      eventType === 'push'
+        ? event.ref.replace('refs/heads/', '')
+        : event.repositories_added[0]?.default_branch || 'main'; // Same shit here.
+
+    // Get GitHub App installation token
+    const installationToken = await getInstallationToken(event.installation.id);
+
+    // Trigger RunPod job
+    await triggerRunPodJob({
+      job_id,
+      repo: repoFullName,
+      git_ref: gitRef,
+      token: installationToken,
+      api_url: process.env.NODE_ENV === 'production'
+        ? 'https://doctown.dev'
+        : 'http://localhost:5173'
+    });
+
+    // Store job in database (TODO: implement persistence)
+    // Should use Vercel KV here for a little easy to rip cache
+    // We should definitely store job metadata immediately.
+    console.log(`Created job ${job_id} for ${repoFullName}`);
+
+    return json({ job_id, status: 'pending' });
   }
 
-  // TODO: store job in database; for now it's ephemeral
-  return json({ job_id, status: 'pending' });
+  return json({ message: 'Event ignored' });
 };
 ```
 
-`upload/+server.ts` (simplified):
+`docpack/upload/+server.ts`:
 
 ```ts
 import { json } from '@sveltejs/kit';
@@ -427,7 +404,6 @@ export const POST: RequestHandler = async ({ request }) => {
     return json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  // TODO: verify OIDC token signature
   const formData = await request.formData();
   const job_id = formData.get('job_id') as string;
   const file = formData.get('file') as File;
@@ -450,7 +426,7 @@ export const POST: RequestHandler = async ({ request }) => {
 };
 ```
 
-`complete/+server.ts` (simplified):
+`docpack/complete/+server.ts`:
 
 ```ts
 import { json } from '@sveltejs/kit';
@@ -471,49 +447,107 @@ export const POST: RequestHandler = async ({ request }) => {
 };
 ```
 
-### 4.2 Dashboard UI
+### 3.2 RunPod integration
 
-In `website/src/routes/dashboard/+page.svelte`, update the **Create Docpack** handler to call the API:
+Create `website/src/lib/runpod.ts`:
 
 ```ts
-async function createDocpack(repo: GitHubRepo) {
-  const response = await fetch('/api/docpack/create', {
+export async function triggerRunPodJob(params: {
+  job_id: string;
+  repo: string;
+  git_ref: string;
+  token: string;
+  api_url: string;
+}) {
+  const response = await fetch(process.env.RUNPOD_ENDPOINT!, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${process.env.RUNPOD_API_KEY}`
+    },
     body: JSON.stringify({
-      repo_owner: repo.owner.login,
-      repo_name: repo.name,
-      branch: repo.default_branch
+      input: {
+        repo: params.repo,
+        git_ref: params.git_ref,
+        token: params.token,
+        api_url: params.api_url,
+        job_id: params.job_id
+      }
     })
   });
 
-  const { job_id } = await response.json();
+  if (!response.ok) {
+    throw new Error('Failed to trigger RunPod job');
+  }
 
-  // Temporary in-memory state (replace with DB later)
-  docpacks.push({
-    id: job_id,
-    repository: repo.full_name,
-    status: 'pending',
-    createdAt: new Date().toISOString()
-  });
+  return await response.json();
 }
 ```
 
-Phase 5 — GitHub App Setup
+### 3.3 GitHub App integration
+
+Create `website/src/lib/github.ts`:
+
+```ts
+import crypto from 'crypto';
+import { App } from '@octokit/app';
+
+export function verifyGitHubWebhook(payload: string, signature: string | null): boolean {
+  if (!signature) return false;
+
+  const secret = process.env.GITHUB_WEBHOOK_SECRET!;
+  const hmac = crypto.createHmac('sha256', secret);
+  const digest = 'sha256=' + hmac.update(payload).digest('hex');
+
+  return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(digest));
+}
+
+export async function getInstallationToken(installationId: number): Promise<string> {
+  const app = new App({
+    appId: process.env.GITHUB_APP_ID!,
+    privateKey: process.env.GITHUB_APP_PRIVATE_KEY!
+  });
+
+  const { token } = await app.octokit.request(
+    'POST /app/installations/{installation_id}/access_tokens',
+    { installation_id: installationId }
+  );
+
+  return token;
+}
+```
+
+Phase 4 — GitHub App Setup
 ---------------------------
 
 1. Go to **GitHub Settings → Developer settings → GitHub Apps**.
 2. Create new GitHub App: **Doctown**.
 3. Permissions:
    - Repository: Contents (read)
-   - Repository: Actions (write)
    - Repository: Metadata (read)
 4. Webhooks:
-   - Enable and point to `https://doctown.dev/api/webhook` (or your dev tunnel).
-5. Device flow & OAuth:
-   - Enable Device Flow.
-   - Enable OAuth with callback `https://doctown.dev/auth/callback`.
-6. Update website auth flow to use the GitHub App device flow (store installation ID and access token, use App JWT for API calls).
+   - Enable and point to `https://doctown.dev/api/webhook`.
+   - Set webhook secret and store in `GITHUB_WEBHOOK_SECRET` env var.
+   - Subscribe to events: `push`, `installation_repositories`
+5. Generate a private key and store in `GITHUB_APP_PRIVATE_KEY` env var.
+6. Note the App ID and store in `GITHUB_APP_ID` env var.
+
+Phase 5 — RunPod Serverless Setup
+----------------------------------
+
+1. Create a RunPod serverless endpoint (CPU, not GPU).
+2. Create a Docker image with:
+   - Pre-compiled `doctown` binary from releases
+   - Runtime dependencies (git, etc.)
+   - Handler script that receives job params and runs the builder
+3. Configure endpoint to accept JSON input with fields:
+   - `repo`: Repository full name
+   - `git_ref`: Branch/tag/commit to build
+   - `token`: GitHub App installation token
+   - `api_url`: Doctown API URL
+   - `job_id`: Job identifier
+4. Store RunPod API key in `RUNPOD_API_KEY` env var.
+5. Store RunPod endpoint URL in `RUNPOD_ENDPOINT` env var.
 
 Phase 6 — Testing & Deployment
 ------------------------------
@@ -533,7 +567,7 @@ npm run dev
 ngrok http 5173
 ```
 
-Update the GitHub App webhook URL to the ngrok URL. Test the full flow using `doctown-builder` as the target repo.
+Update the GitHub App webhook URL to the ngrok URL. Test the full flow by pushing to a test Rust repository.
 
 ### 6.2 Deployment
 
@@ -541,32 +575,49 @@ Update the GitHub App webhook URL to the ngrok URL. Test the full flow using `do
   - Push to `doctown-builder` repo.
   - Create GitHub release (e.g. `v0.1.0`).
   - Release workflow builds and attaches the binary.
+  - Upload binary to RunPod Docker image.
 
 - **Website**
   - Push to `doctown` repo.
   - Connect to Vercel.
-  - Add environment variables: GitHub App secrets, R2 credentials, OpenAI key, etc.
+  - Add environment variables:
+    - `GITHUB_APP_ID`
+    - `GITHUB_APP_PRIVATE_KEY`
+    - `GITHUB_WEBHOOK_SECRET`
+    - `RUNPOD_API_KEY`
+    - `RUNPOD_ENDPOINT`
+    - `BUCKET_ACCESS_KEY_ID` (R2)
+    - `BUCKET_SECRET` (R2)
+    - `OPENAI_API_KEY`
   - Deploy to `doctown.dev`.
 
 ### 6.3 Self-documentation test
 
-1. Install the Doctown action in the `doctown-builder` repo.
-2. On `doctown.dev`, select `doctown-builder` and click **Create Docpack**.
-3. Confirm that the Action runs, parses the repo, generates a `.docpack`, and uploads it to R2.
-4. Verify the docpack appears in the commons UI.
+1. Install the Doctown GitHub App on the `doctown-builder` repo.
+2. Push a commit to trigger the webhook.
+3. Confirm that:
+   - Webhook is received
+   - RunPod job is triggered
+   - Builder clones the repo
+   - Builder parses Rust files
+   - Builder generates `.docpack`
+   - Builder uploads to SvelteKit API
+   - SvelteKit stores in R2
+   - Docpack appears in commons UI
 
 MVP Success Criteria
 --------------------
 
-- ✅ User authenticates with GitHub App (device flow).
-- ✅ User selects a Rust repo and clicks **Create Docpack**.
-- ✅ Website dispatches GitHub Action with OIDC token.
-- ✅ Action downloads pre-compiled binary.
-- ✅ Binary parses Rust files with tree-sitter.
-- ✅ Binary extracts rich symbols (name, signature, docs, etc.).
-- ✅ Binary batches symbols (16k token limit).
-- ✅ Binary sends batches to OpenAI in parallel.
-- ✅ Binary creates `.docpack` ZIP.
-- ✅ Binary uploads to website API.
+- ✅ User installs Doctown GitHub App on their Rust repository.
+- ✅ Push event or installation triggers webhook to SvelteKit backend.
+- ✅ Backend triggers RunPod serverless CPU job with repo details.
+- ✅ RunPod builder clones repo using GitHub App installation token.
+- ✅ Builder parses Rust files with tree-sitter.
+- ✅ Builder extracts rich symbols (name, signature, docs, etc.).
+- ✅ Builder batches symbols (16k token limit).
+- ✅ Builder sends batches to OpenAI in parallel.
+- ✅ Builder creates `.docpack` ZIP.
+- ✅ Builder streams result back to website API.
 - ✅ Website uploads to R2 bucket.
 - ✅ Docpack appears in commons.
+- ✅ **Zero repo pollution** — no workflows, no config files, no setup required.

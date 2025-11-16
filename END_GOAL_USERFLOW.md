@@ -41,7 +41,7 @@ High-level flow:
 Phases
 ------
 
-Phase 1 — Repository Setup & Infrastructure
+Phase 1 — Repository Setup & Infrastructure (THIS SHIT IS MOSTLY DONE NOW)
 ------------------------------------------
 
 1. **Split monorepo into two GitHub repositories**

@@ -1,6 +1,6 @@
 # Doctown v3 Implementation Timeline
 
-## Phase 1: Database Foundation (Day 1-2)
+## Phase 1: Database Foundation (Day 1-2) ✅ COMPLETE
 
 **Goal:** Build the persistence layer everything else depends on.
 
@@ -8,25 +8,27 @@
 
 ### Tasks
 
-1. **Set up Supabase client in SvelteKit** - DONE
+1. **Set up Supabase client in SvelteKit** ✅ DONE
    - Install `@supabase/supabase-js`
-   - Create database helper/client
+   - Create database helper/client (`/website/src/lib/supabase.ts`)
    - Migrate sessions from in-memory to Supabase
 
-2. **Create database schema** - DONE
+2. **Create database schema** ✅ DONE
    - `users` (id, github_id, github_login, avatar_url, access_token)
    - `jobs` (id, user_id, repo, git_ref, status, created_at, updated_at)
    - `docpacks` (id, job_id, name, file_url, public, created_at)
    - `github_installations` (id, user_id, repo_full_name, installation_id)
+   - TypeScript types generated (`/website/src/lib/database.types.ts`)
 
-3. **Update auth to use database** - DONE (partially)
+3. **Update auth to use database** ✅ DONE
    - Save users on GitHub OAuth callback
    - Store sessions in Supabase
    - Update `hooks.server.ts` to query DB
+   - Helper functions: `upsertUser`, `createSession`, `getSession`, `deleteSession`
 
 ---
 
-## Phase 2: Job Creation API (Day 2-3)
+## Phase 2: Job Creation API (Day 2-3) ✅ COMPLETE
 
 **Goal:** Build the entry point for triggering documentation generation.
 
@@ -34,16 +36,28 @@
 
 ### Tasks
 
-1. **Create `/api/jobs/create` endpoint**
-   - Accept: `{ repo, git_ref, user_id }`
-   - Generate job ID
+1. **Create `/api/jobs/create` endpoint** ✅ DONE
+   - Accept: `{ repo, git_ref }` in POST body
+   - Validate user authentication
+   - Generate job ID automatically (UUID)
    - Store job in database with status `pending`
-   - Return job ID to frontend
+   - Return `{ job_id, status, created_at }` to frontend
+   - File: `/website/src/routes/api/jobs/create/+server.ts`
 
-2. **Update dashboard to trigger jobs**
-   - Add "Generate Docs" button
-   - Call `/api/jobs/create` on click
-   - Show job status polling
+2. **Create `/api/jobs/status/[id]` endpoint** ✅ DONE
+   - GET endpoint to poll job status
+   - Verify job ownership by user
+   - Return complete job information
+   - File: `/website/src/routes/api/jobs/status/[id]/+server.ts`
+
+3. **Update dashboard to trigger jobs** ✅ DONE
+   - Changed "Create Docpack" button to "Generate Docs"
+   - Call `/api/jobs/create` on button click
+   - Store returned job ID in UI state
+   - Automatic status polling every 5 seconds
+   - Stop polling when job reaches `completed` or `failed`
+   - Cleanup polling intervals on component unmount
+   - Files: `/website/src/routes/dashboard/+page.svelte`, `/website/src/lib/components/RepoModal.svelte`
 
 ---
 
@@ -71,9 +85,7 @@
    - Pass: job_id, repo, git_ref, GitHub token
    - Update job status to `building`
 
-3. **Create `/api/jobs/status/:id` endpoint**
-   - Poll job status from database
-   - Frontend can check if job is complete
+3. **Create `/api/jobs/status/[id]` endpoint** ✅ DONE (completed in Phase 2)
 
 ---
 

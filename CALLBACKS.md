@@ -1,14 +1,13 @@
-Github oauth callback:
-local: http://localhost:5173/auth/callback
-prod: https://www.doctown.dev/auth/callback
+Github APP callbacks:
+https://www.doctown.dev/api/github/webhook
+https://www.doctown.dev/api/github/callback
+https://www.doctown.dev
 
-Github oauth homepage url:
-local: http://localhost:5173
-prod: https://www.doctown.dev
 
 R2/S3 public bucket url:
 local: [N/A]
 prod: commons.doctown.dev
+
 
 Bucket name:
 doctown-central

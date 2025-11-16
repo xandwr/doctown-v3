@@ -1,0 +1,6 @@
+[submodule "builder"]
+	path = builder
+	url = https://github.com/xandwr/doctown-builder
+[submodule "website"]
+	path = website
+	url = https://github.com/xandwr/doctown-website-v3

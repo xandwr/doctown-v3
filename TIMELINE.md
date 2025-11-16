@@ -175,26 +175,53 @@
    - Added `DOCTOWN_BUILDER_SHARED_SECRET` to `.env.example`
    - Updated for both builder and website environments
 
+4. **Builder Dockerfile** ✅ DONE
+   - Implemented multi-stage Docker build for Rust application
+   - Stage 1: Compile Rust binary with all dependencies (git2, tree-sitter, reqwest)
+   - Stage 2: Minimal runtime image (debian:bookworm-slim) with git and CA certificates
+   - Dependency caching optimization: builds dependencies first, then source code
+   - Created `.dockerignore` to exclude build artifacts and reduce context size
+   - Binary expects `RUNPOD_INPUT` environment variable from RunPod
+   - Ready for deployment to RunPod serverless platform
+
 ---
 
-## Phase 6: Retrieve & Display (Day 9-10)
+## Phase 6: Retrieve & Display (Day 9-10) ✅
 
 **Goal:** Show completed docpacks to users.
 
+**Status:** Complete
+
 ### Tasks
 
-1. **Create `/api/docpacks` endpoint**
-   - List user's docpacks from database
-   - Return metadata + download URLs
+1. **Create `/api/docpacks` endpoint** ✅
+   - ✅ Created GET endpoint at `/website/src/routes/api/docpacks/+server.ts`
+   - ✅ Returns user's docpacks from database (requires auth)
+   - ✅ Supports `?public=true` query param for public docpacks (no auth)
+   - ✅ Returns metadata + download URLs (file_url from R2)
+   - ✅ Uses existing `getUserDocpacks()` and `getPublicDocpacks()` functions
 
-2. **Update dashboard to show completed docpacks**
-   - Fetch from `/api/docpacks`
-   - Show list with download buttons
-   - Link to R2 file URLs
+2. **Update dashboard to show completed docpacks** ✅
+   - ✅ Added fetch from `/api/docpacks` on mount
+   - ✅ Auto-resumes polling for pending/building jobs
+   - ✅ Shows download button in DocpackConfigModal for completed docpacks
+   - ✅ Download button links directly to R2 file URLs
+   - ✅ Displays all docpacks with status badges
 
-3. **Update commons page (if public)**
-   - Query public docpacks
-   - Replace mock data with real data
+3. **Update commons page** ✅
+   - ✅ Replaced mock data with API call to `/api/docpacks?public=true`
+   - ✅ Added loading state with spinner
+   - ✅ Added error handling with user-friendly messages
+   - ✅ Maintains responsive grid layout (1/2/3 columns)
+   - ✅ Public docpacks visible to all users (no auth required)
+
+### Implementation Details
+
+- **Database functions** already existed in `/lib/supabase.ts`
+- **Download functionality** added to DocpackConfigModal component
+- **Status handling** properly filters by `status === "valid"` or `status === "public"`
+- **Error states** handled gracefully in both dashboard and commons
+- **Polling mechanism** integrated to track pending job completion
 
 ---
 

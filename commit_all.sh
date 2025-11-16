@@ -24,8 +24,8 @@ if [ -z "$COMMIT_MESSAGE" ]; then
   exit 1
 fi
 
-# Array of directories to process
-DIRS=("builder" "website")
+# Array of directories to process (including repo root)
+DIRS=("." "builder" "website")
 
 # Function to commit and push in a directory
 commit_and_push() {

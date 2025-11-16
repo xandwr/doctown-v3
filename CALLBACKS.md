@@ -15,3 +15,7 @@ R2/S3 public bucket url:
 
 Bucket name:
 - doctown-central
+
+
+Supabase publishable key:
+- sb_publishable_HDL2yT3dQRGJ5lOqjrdoYA_GWpHvXwp

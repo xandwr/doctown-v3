@@ -8,18 +8,18 @@
 
 ### Tasks
 
-1. **Set up Supabase client in SvelteKit**
-   - Install `@supabase/supabase-js` -- DONE
+1. **Set up Supabase client in SvelteKit** - DONE
+   - Install `@supabase/supabase-js`
    - Create database helper/client
    - Migrate sessions from in-memory to Supabase
 
-2. **Create database schema**
+2. **Create database schema** - DONE
    - `users` (id, github_id, github_login, avatar_url, access_token)
    - `jobs` (id, user_id, repo, git_ref, status, created_at, updated_at)
    - `docpacks` (id, job_id, name, file_url, public, created_at)
    - `github_installations` (id, user_id, repo_full_name, installation_id)
 
-3. **Update auth to use database**
+3. **Update auth to use database** - DONE (partially)
    - Save users on GitHub OAuth callback
    - Store sessions in Supabase
    - Update `hooks.server.ts` to query DB

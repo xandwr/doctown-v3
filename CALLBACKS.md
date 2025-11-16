@@ -1,6 +1,6 @@
 Github oauth callbacks:
 - https://www.doctown.dev/api/github/webhook
-- https://www.doctown.dev/api/github/callback
+- https://www.doctown.dev/auth/callback
 - https://www.doctown.dev
 
 

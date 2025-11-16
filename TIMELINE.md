@@ -61,7 +61,7 @@
 
 ---
 
-## Phase 3: RunPod Integration (Day 3-4)
+## Phase 3: RunPod Integration (Day 3-4) ✅ COMPLETE
 
 **Goal:** Connect job creation to actual build triggering.
 
@@ -69,21 +69,18 @@
 
 ### Tasks
 
-1. **Create RunPod client/helper**
-   ```typescript
-   // /website/src/lib/runpod.ts
-   export async function triggerBuild(params: {
-     job_id: string;
-     repo: string;
-     git_ref: string;
-     token: string;
-   })
-   ```
+1. **Create RunPod client/helper** ✅ DONE
+   - Created `/website/src/lib/runpod.ts`
+   - Implemented `triggerBuild()` function with proper types
+   - Configured RunPod API authentication
+   - Includes error handling and logging
 
-2. **Update `/api/jobs/create` to call RunPod**
-   - After creating job in DB, trigger RunPod
-   - Pass: job_id, repo, git_ref, GitHub token
-   - Update job status to `building`
+2. **Update `/api/jobs/create` to call RunPod** ✅ DONE
+   - Triggers RunPod build after creating job in DB
+   - Passes: job_id, repo, git_ref, GitHub access token
+   - Updates job status to `building` on success
+   - Updates job status to `failed` with error message on failure
+   - Non-blocking (background) execution for fast API responses
 
 3. **Create `/api/jobs/status/[id]` endpoint** ✅ DONE (completed in Phase 2)
 

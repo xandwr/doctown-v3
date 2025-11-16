@@ -28,6 +28,31 @@ fi
 # IMPORTANT: Process submodules before the parent repo so submodule reference updates can be committed
 DIRS=("builder" "website" ".")
 
+run_formatters() {
+  local dir=$1
+
+  case "$dir" in
+    "website")
+      if [ -f "package.json" ]; then
+        echo "Running npm run format in website..."
+        npm run format || {
+          echo "Error: npm run format failed in website";
+          return 1;
+        }
+      fi
+      ;;
+    "builder")
+      if [ -f "Cargo.toml" ]; then
+        echo "Running cargo fmt in builder..."
+        cargo fmt || {
+          echo "Error: cargo fmt failed in builder";
+          return 1;
+        }
+      fi
+      ;;
+  esac
+}
+
 # Function to commit and push in a directory
 commit_and_push() {
   local dir=$1
@@ -43,6 +68,12 @@ commit_and_push() {
   fi
 
   cd "$dir" || exit 1
+
+  # Run formatters when applicable
+  run_formatters "$dir" || {
+    cd ..
+    exit 1
+  }
 
   # Check if there are any changes (including untracked files)
   if [[ -z $(git status --porcelain) ]]; then

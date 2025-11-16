@@ -92,8 +92,6 @@
 
 **Why fourth?** RunPod now calls this, need something to respond.
 
-**Start simple - don't try to build everything at once!**
-
 ### Tasks
 
 1. **Basic file structure (Day 4-5)**

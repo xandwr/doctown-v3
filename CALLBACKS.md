@@ -1,7 +1,12 @@
-Github APP callbacks:
+Github oauth callbacks:
 - https://www.doctown.dev/api/github/webhook
 - https://www.doctown.dev/api/github/callback
 - https://www.doctown.dev
+
+
+Local github oauth callbacks:
+- http://localhost:5173
+- http://localhost:5173/auth/callback
 
 
 RunPod endpoint ID for cpu builder:

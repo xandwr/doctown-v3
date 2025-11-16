@@ -24,8 +24,9 @@ if [ -z "$COMMIT_MESSAGE" ]; then
   exit 1
 fi
 
-# Array of directories to process (including repo root)
-DIRS=("." "builder" "website")
+# Array of directories to process (submodules first, then parent repo)
+# IMPORTANT: Process submodules before the parent repo so submodule reference updates can be committed
+DIRS=("builder" "website" ".")
 
 # Function to commit and push in a directory
 commit_and_push() {
@@ -43,8 +44,8 @@ commit_and_push() {
 
   cd "$dir" || exit 1
 
-  # Check if there are any changes
-  if git diff-index --quiet HEAD --; then
+  # Check if there are any changes (including untracked files)
+  if [[ -z $(git status --porcelain) ]]; then
     echo "No changes in $dir, skipping..."
   else
     echo "Committing changes in $dir..."

@@ -26,7 +26,7 @@ fi
 
 # Array of directories to process (submodules first, then parent repo)
 # IMPORTANT: Process submodules before the parent repo so submodule reference updates can be committed
-DIRS=("builder" "website" ".")
+DIRS=("builder" "website" "localdoc" ".")
 
 run_formatters() {
   local dir=$1

@@ -4,3 +4,6 @@
 [submodule "website"]
 	path = website
 	url = https://github.com/xandwr/doctown-website-v3
+[submodule "localdoc"]
+	path = localdoc
+	url = https://github.com/xandwr/localdoc

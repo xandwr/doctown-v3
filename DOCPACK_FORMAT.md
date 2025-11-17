@@ -4,7 +4,8 @@
 **Extension:** `.docpack`  
 **Format:** A ZIP archive containing a small set of structured, human-readable JSON files and directories.
 
-A docpack is a portable, self-contained documentation bundle generated from a source code repository. It includes the extracted symbol graph, AI-generated documentation, and optional source snapshots.
+A docpack is a portable, self-contained documentation bundle generated from a source code repository.
+It includes the extracted symbol graph, AI-generated documentation, and optional source snapshots.
 
 ---
 

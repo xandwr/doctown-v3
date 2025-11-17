@@ -48,9 +48,18 @@ Top-level metadata describing the docpack, the project it was generated from, an
   "stats": {
     "symbols_extracted": 128,
     "docs_generated": 128
-  }
+  },
+  "public": false
 }
 ```
+
+**Fields:**
+- `docpack_format`: Version of the docpack format specification
+- `project`: Project metadata including name, version, repository URL, and commit hash
+- `generated_at`: ISO 8601 timestamp of when the docpack was generated
+- `language_summary`: Count of files by language/type
+- `stats`: Counts of extracted symbols and generated documentation
+- `public`: Boolean indicating if this docpack is intended for public visibility (defaults to `false`)
 
 ---
 

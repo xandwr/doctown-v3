@@ -51,8 +51,19 @@ CREATE TABLE docpacks (
   commit_hash TEXT,
   version TEXT,
   language TEXT,
+  tracked_branch TEXT,
+  frozen BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Repo branches table (for tracking branch state and auto-updates)
+CREATE TABLE repo_branches (
+  repo_full_name TEXT NOT NULL,
+  branch TEXT NOT NULL,
+  last_seen_commit TEXT NOT NULL,
+  updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (repo_full_name, branch)
 );
 
 -- GitHub installations table
@@ -75,6 +86,8 @@ CREATE INDEX idx_jobs_user_id ON jobs(user_id);
 CREATE INDEX idx_jobs_status ON jobs(status);
 CREATE INDEX idx_docpacks_job_id ON docpacks(job_id);
 CREATE INDEX idx_docpacks_public ON docpacks(public);
+CREATE INDEX idx_docpacks_tracked_branch ON docpacks(tracked_branch);
+CREATE INDEX idx_docpacks_full_name ON docpacks(full_name);
 CREATE INDEX idx_github_installations_user_id ON github_installations(user_id);
 
 -- Function to update updated_at timestamp
@@ -102,12 +115,16 @@ CREATE TRIGGER update_docpacks_updated_at BEFORE UPDATE ON docpacks
 CREATE TRIGGER update_github_installations_updated_at BEFORE UPDATE ON github_installations
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+CREATE TRIGGER update_repo_branches_updated_at BEFORE UPDATE ON repo_branches
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
 -- Enable Row Level Security (RLS)
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE jobs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE docpacks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE github_installations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE repo_branches ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies (for service role, all access is allowed by default)
 -- These policies would apply if using anon or authenticated roles
@@ -135,3 +152,86 @@ CREATE POLICY "Users can view their own docpacks" ON docpacks
 
 CREATE POLICY "Users can view their own installations" ON github_installations
   FOR SELECT USING (auth.uid()::text = user_id::text);
+
+-- JOB LOGS
+CREATE TABLE IF NOT EXISTS job_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  job_id UUID NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+  timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  level TEXT NOT NULL DEFAULT 'info',
+  message TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+
+CREATE INDEX IF NOT EXISTS idx_job_logs_job_id ON job_logs(job_id, timestamp DESC);
+
+ALTER TABLE job_logs ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can read their own job logs" ON job_logs
+  FOR SELECT
+  USING (
+    job_id IN (
+      SELECT id FROM jobs WHERE user_id = auth.uid()
+    )
+  );
+
+-- Add support for user edits to docpack symbols and documentation
+
+-- Symbol edits table: stores user modifications to symbol entries and docs
+CREATE TABLE symbol_edits (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  docpack_id UUID NOT NULL REFERENCES docpacks(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  symbol_id TEXT NOT NULL, -- The symbol ID from symbols.json
+  
+  -- Edited fields from symbol entry
+  signature TEXT,
+  kind TEXT,
+  
+  -- Edited fields from documentation
+  summary TEXT,
+  description TEXT,
+  parameters JSONB, -- Array of {name, type, description}
+  returns TEXT,
+  example TEXT,
+  notes JSONB, -- Array of strings
+  
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  
+  -- Ensure one edit per user per symbol per docpack
+  UNIQUE(docpack_id, user_id, symbol_id)
+);
+
+-- Indexes for performance
+CREATE INDEX idx_symbol_edits_docpack_id ON symbol_edits(docpack_id);
+CREATE INDEX idx_symbol_edits_user_id ON symbol_edits(user_id);
+CREATE INDEX idx_symbol_edits_lookup ON symbol_edits(docpack_id, user_id, symbol_id);
+
+-- Trigger to auto-update updated_at
+CREATE TRIGGER update_symbol_edits_updated_at BEFORE UPDATE ON symbol_edits
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- Add RLS (Row Level Security) policies
+ALTER TABLE symbol_edits ENABLE ROW LEVEL SECURITY;
+
+-- Users can only read their own edits
+CREATE POLICY "Users can read their own symbol edits"
+  ON symbol_edits FOR SELECT
+  USING (auth.uid() = user_id);
+
+-- Users can only insert their own edits
+CREATE POLICY "Users can insert their own symbol edits"
+  ON symbol_edits FOR INSERT
+  WITH CHECK (auth.uid() = user_id);
+
+-- Users can only update their own edits
+CREATE POLICY "Users can update their own symbol edits"
+  ON symbol_edits FOR UPDATE
+  USING (auth.uid() = user_id);
+
+-- Users can only delete their own edits
+CREATE POLICY "Users can delete their own symbol edits"
+  ON symbol_edits FOR DELETE
+  USING (auth.uid() = user_id);

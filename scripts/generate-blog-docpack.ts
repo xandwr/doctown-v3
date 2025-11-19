@@ -1,9 +1,15 @@
 #!/usr/bin/env node
 /**
  * Blog Docpack Generator
- * 
+ *
  * Takes markdown blog posts and generates a valid .docpack file
  * where each post is represented as a Symbol with kind="article"
+ *
+ * Usage:
+ *   npx ts-node scripts/generate-blog-docpack.ts [blogDir] [outputPath] [--upload]
+ *
+ * Options:
+ *   --upload    Upload the generated docpack to R2 bucket (blog-posts/ folder)
  */
 
 import fs from 'fs';
@@ -12,6 +18,7 @@ import path from 'path';
 // @ts-ignore - archiver types not installed
 import archiver from 'archiver';
 import crypto from 'crypto';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 
 interface BlogMetadata {
   [key: string]: string;
@@ -178,15 +185,70 @@ async function generateBlogDocpack(blogDir: string, outputPath: string) {
 
   console.log(`✅ Blog docpack generated: ${outputPath}`);
   console.log(`📊 Stats: ${symbols.length} articles, ${archive.pointer()} bytes`);
+
+  return outputPath;
+}
+
+async function uploadToR2(filePath: string): Promise<string> {
+  console.log('☁️  Uploading to R2...');
+
+  const accessKeyId = process.env.BUCKET_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.BUCKET_SECRET_ACCESS_KEY;
+  const endpoint = process.env.BUCKET_S3_ENDPOINT;
+  const bucketName = process.env.BUCKET_NAME || 'doctown-central';
+
+  if (!accessKeyId || !secretAccessKey || !endpoint) {
+    throw new Error(
+      'Missing R2 credentials. Set BUCKET_ACCESS_KEY_ID, BUCKET_SECRET_ACCESS_KEY, and BUCKET_S3_ENDPOINT'
+    );
+  }
+
+  const s3Client = new S3Client({
+    region: 'auto',
+    endpoint: endpoint,
+    credentials: {
+      accessKeyId,
+      secretAccessKey,
+    },
+  });
+
+  const fileContent = await fsPromises.readFile(filePath);
+  const key = 'blog-posts/blog.docpack';
+
+  await s3Client.send(
+    new PutObjectCommand({
+      Bucket: bucketName,
+      Key: key,
+      Body: fileContent,
+      ContentType: 'application/zip',
+    })
+  );
+
+  const fileUrl = `${endpoint}/${bucketName}/${key}`;
+  console.log(`✅ Uploaded to R2: ${fileUrl}`);
+
+  return fileUrl;
 }
 
 // CLI
-const blogDir = process.argv[2] || './blog-posts';
-const outputPath = process.argv[3] || './xandwr_doctown_blog.docpack';
+const args = process.argv.slice(2);
+const shouldUpload = args.includes('--upload');
+const positionalArgs = args.filter((arg) => !arg.startsWith('--'));
 
-generateBlogDocpack(blogDir, outputPath)
-  .then(() => process.exit(0))
-  .catch(err => {
+const blogDir = positionalArgs[0] || './blog-posts';
+const outputPath = positionalArgs[1] || './xandwr_doctown_blog.docpack';
+
+(async () => {
+  try {
+    const generatedPath = await generateBlogDocpack(blogDir, outputPath);
+
+    if (shouldUpload) {
+      await uploadToR2(generatedPath);
+    }
+
+    process.exit(0);
+  } catch (err: any) {
     console.error('❌ Error:', err.message);
     process.exit(1);
-  });
+  }
+})();

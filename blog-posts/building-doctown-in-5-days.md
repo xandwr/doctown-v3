@@ -11,7 +11,7 @@ description: How I built an AI-powered documentation system that costs pennies a
 
 Documentation sucks. It's either outdated, incomplete, or buried in a README that nobody reads. For AI agents and developers alike, understanding a codebase means grepping through files, reading source code, and piecing together context from comments and naming conventions.
 
-I wanted something better: **O(1) access to any symbol's documentation**. No searching. No guessing. Just instant, accurate, AI-generated docs that follow you anywhere.
+I wanted something better: **O(1) access to any symbol's documentation**. No searching. No guessing. Just instant, accurate, AI-generated and Human-controlled docs that follow you anywhere.
 
 ## The Goal: "npm for docs"
 
@@ -115,8 +115,6 @@ localdoc search rust
 localdoc install xandwr:localdoc
 localdoc query xandwr:localdoc symbols
 ```
-
-The entire project—from idea to working product—took one week of intense coding. Five consecutive all-nighters, a lot of Monster Ultra White, and the belief that good tools should be fast, cheap, and actually useful.
 
 If you're building something and want automatic documentation, [check it out](https://www.doctown.dev)!
 

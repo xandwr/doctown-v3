@@ -8,6 +8,7 @@ CREATE TABLE users (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   github_id BIGINT UNIQUE NOT NULL,
   github_login TEXT NOT NULL,
+  email TEXT UNIQUE,
   name TEXT,
   avatar_url TEXT,
   html_url TEXT,

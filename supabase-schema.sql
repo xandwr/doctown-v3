@@ -261,3 +261,11 @@ CREATE POLICY "Users can update their own symbol edits"
 CREATE POLICY "Users can delete their own symbol edits"
   ON symbol_edits FOR DELETE
   USING (auth.uid() = user_id);
+
+-- Grant permissions to service_role (bypasses RLS)
+GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO service_role;
+
+-- Grant permissions to anon and authenticated for RLS-controlled access
+GRANT USAGE ON SCHEMA public TO anon, authenticated;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO anon, authenticated;

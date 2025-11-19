@@ -23,11 +23,11 @@ localdoc search "authentication" project.docpack
 
 Three parts. They work together but they don't need to.
 
-**Builder** Rust service that accepts code repositories, parses them with tree-sitter, sends symbols to OpenAI, generates documentation, packages everything into `.docpack` files.
+**Builder** – Rust service that accepts code repositories, parses them with tree-sitter, sends symbols to OpenAI, generates documentation, packages everything into `.docpack` files.
 
-**Localdoc** Rust CLI for reading docpacks. Works offline. Full-text search. Symbol lookup. Instant.
+**Localdoc** – Rust CLI for reading docpacks. Works offline. Full-text search. Symbol lookup. Instant.
 
-**Website** SvelteKit dashboard for creators. Connect GitHub repos. Generate docpacks. Publish to the Commons. Track builds in realtime.
+**Website** – SvelteKit dashboard for creators. Connect GitHub repos. Generate docpacks. Publish to the Commons. Track builds in realtime.
 
 ## The model
 
@@ -43,7 +43,7 @@ Documentation becomes a dependency. You install it once. It works forever.
 
 - **Builder**: Rust, tree-sitter, OpenAI API, Docker, RunPod
 - **Localdoc**: Rust, ZIP archive parsing
-- **Website**: SvelteKit, TypeScript, Tailwind, Supabase, S3/R2
+- **Website**: SvelteKit, TypeScript, Tailwind, Supabase, Cloudflare R2
 
 Supports Rust, Python, JavaScript, TypeScript. More languages will come.
 
@@ -57,13 +57,116 @@ Documentation here is a file. You download it. You keep it. It doesn't change un
 
 Creators pay because generation costs money. Readers don't pay because reading shouldn't. The split is clean.
 
+## Project structure
+
+```
+doctown-v3/
+├── builder/          # Rust documentation generation pipeline
+├── localdoc/         # Rust CLI for reading docpacks
+├── website/          # SvelteKit web dashboard
+└── scripts/          # Utility scripts for maintenance
+```
+
+### Builder
+
+The builder is a complete documentation generation pipeline. It extracts symbols from source code using tree-sitter, generates AI-powered documentation via OpenAI API, and packages everything into portable `.docpack` files.
+
+**Key features:**
+- Symbol extraction from Rust, Python, JavaScript, TypeScript
+- Parallel AI documentation generation
+- Structured output in `.docpack` format (ZIP archive)
+- Docker deployment ready for RunPod
+
+See [`builder/README.md`](builder/README.md) for detailed usage and API documentation.
+
+### Localdoc
+
+A fast, offline CLI tool for querying docpack files. No network required. Instant full-text search across all documentation.
+
+**Commands:**
+- `inspect` – View docpack metadata and stats
+- `query symbols` – List all symbols in the codebase
+- `query symbol <name>` – Get detailed documentation for a specific symbol
+- `query search <keyword>` – Full-text search across all documentation
+- `query files` – List source files with symbol counts
+
+See [`localdoc/README.md`](localdoc/README.md) and [`localdoc/EXAMPLES.md`](localdoc/EXAMPLES.md) for examples.
+
+### Website
+
+SvelteKit web application providing:
+- GitHub OAuth integration for repository access
+- Job creation and build status tracking with real-time streaming
+- Public Commons for browsing and downloading docpacks
+- Stripe subscription management ($10/month for unlimited builds)
+- Manual editing of AI-generated documentation
+- Docpack privacy controls (public/private)
+
 ## Getting started
 
-Visit the Commons. Find a docpack. Download it. Install `localdoc`. Run it.
+### For readers
 
-Or create your own. Connect your GitHub. The system will handle the rest. The build logs stream in realtime. When it finishes, you get a `.docpack` file. You can publish it or keep it private.
+1. Visit the Commons at [doctown.dev](https://www.doctown.dev)
+2. Find a docpack you need
+3. Download it
+4. Install localdoc: `cargo install localdoc`
+5. Query it: `localdoc inspect your-docpack.docpack`
 
-Everything works locally. The web interface is optional. The CLI is permanent.
+No account required. No tracking. The docpack is yours forever.
+
+### For creators
+
+1. Visit [doctown.dev](https://www.doctown.dev)
+2. Sign in with GitHub
+3. Subscribe ($10/month) for unlimited docpack generation
+4. Connect a repository
+5. Watch the build stream in realtime
+6. Download or publish to the Commons
+
+Your docpacks can be private or public. You choose.
+
+## Development setup
+
+See [`SETUP.md`](SETUP.md) for:
+- Environment configuration
+- Stripe integration setup
+- GitHub OAuth callbacks
+- RunPod deployment
+- Supabase schema setup
+
+See [`DEVELOPMENT.md`](DEVELOPMENT.md) for:
+- Docpack format specification
+- Feature documentation and architecture
+- Database schema details
+- Automated cleanup systems
+
+## Features
+
+- **Portable documentation** – Single `.docpack` file contains everything
+- **Offline-first** – No internet required to read documentation
+- **AI-generated** – Comprehensive docs for every symbol
+- **Manual editing** – Full control to refine AI-generated content
+- **Full-text search** – Instant search across all documentation
+- **Privacy controls** – Public or private docpacks
+- **Real-time builds** – Watch your documentation generate live
+- **Storage optimization** – Automated cleanup of orphaned files
+- **Open source** – MIT licensed
+
+## Docpack format
+
+A `.docpack` is a ZIP archive containing:
+
+```
+project.docpack/
+├── manifest.json       # Metadata, stats, privacy settings
+├── symbols.json        # Extracted code structure
+└── docs/
+    ├── doc_0000.json   # AI-generated documentation
+    ├── doc_0001.json
+    └── ...
+```
+
+See [`DEVELOPMENT.md`](DEVELOPMENT.md) for the complete format specification.
 
 ---
 

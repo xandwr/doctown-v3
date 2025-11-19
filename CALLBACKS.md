@@ -24,3 +24,7 @@ Bucket name:
 
 Supabase publishable key:
 - sb_publishable_HDL2yT3dQRGJ5lOqjrdoYA_GWpHvXwp
+
+
+STRIPE:
+- https://www.doctown.dev/api/webhooks/stripe

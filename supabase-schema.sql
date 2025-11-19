@@ -77,6 +77,21 @@ CREATE TABLE github_installations (
   UNIQUE(user_id, repo_full_name)
 );
 
+-- Subscriptions table
+CREATE TABLE subscriptions (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  stripe_customer_id TEXT UNIQUE NOT NULL,
+  stripe_subscription_id TEXT UNIQUE NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('active', 'canceled', 'past_due', 'incomplete', 'trialing')),
+  current_period_start TIMESTAMP WITH TIME ZONE NOT NULL,
+  current_period_end TIMESTAMP WITH TIME ZONE NOT NULL,
+  cancel_at_period_end BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE(user_id)
+);
+
 -- Indexes for better query performance
 CREATE INDEX idx_sessions_token ON sessions(session_token);
 CREATE INDEX idx_sessions_user_id ON sessions(user_id);
@@ -89,6 +104,9 @@ CREATE INDEX idx_docpacks_public ON docpacks(public);
 CREATE INDEX idx_docpacks_tracked_branch ON docpacks(tracked_branch);
 CREATE INDEX idx_docpacks_full_name ON docpacks(full_name);
 CREATE INDEX idx_github_installations_user_id ON github_installations(user_id);
+CREATE INDEX idx_subscriptions_user_id ON subscriptions(user_id);
+CREATE INDEX idx_subscriptions_stripe_customer_id ON subscriptions(stripe_customer_id);
+CREATE INDEX idx_subscriptions_status ON subscriptions(status);
 
 -- Function to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -118,6 +136,9 @@ CREATE TRIGGER update_github_installations_updated_at BEFORE UPDATE ON github_in
 CREATE TRIGGER update_repo_branches_updated_at BEFORE UPDATE ON repo_branches
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+CREATE TRIGGER update_subscriptions_updated_at BEFORE UPDATE ON subscriptions
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
 -- Enable Row Level Security (RLS)
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sessions ENABLE ROW LEVEL SECURITY;
@@ -125,6 +146,7 @@ ALTER TABLE jobs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE docpacks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE github_installations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE repo_branches ENABLE ROW LEVEL SECURITY;
+ALTER TABLE subscriptions ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies (for service role, all access is allowed by default)
 -- These policies would apply if using anon or authenticated roles
@@ -151,6 +173,9 @@ CREATE POLICY "Users can view their own docpacks" ON docpacks
   );
 
 CREATE POLICY "Users can view their own installations" ON github_installations
+  FOR SELECT USING (auth.uid()::text = user_id::text);
+
+CREATE POLICY "Users can view their own subscription" ON subscriptions
   FOR SELECT USING (auth.uid()::text = user_id::text);
 
 -- JOB LOGS

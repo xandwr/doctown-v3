@@ -269,3 +269,38 @@ GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO service_role;
 -- Grant permissions to anon and authenticated for RLS-controlled access
 GRANT USAGE ON SCHEMA public TO anon, authenticated;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO anon, authenticated;
+
+-- Blog posts table
+CREATE TABLE blog_posts (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  slug TEXT UNIQUE NOT NULL,
+  title TEXT NOT NULL,
+  date DATE NOT NULL DEFAULT CURRENT_DATE,
+  author TEXT NOT NULL DEFAULT 'Xander',
+  read_time TEXT NOT NULL DEFAULT '5 min',
+  tags TEXT[] DEFAULT '{}',
+  description TEXT NOT NULL DEFAULT '',
+  content TEXT NOT NULL DEFAULT '',
+  cover_image TEXT,
+  published BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Index for published posts
+CREATE INDEX idx_blog_posts_published ON blog_posts(published, date DESC);
+CREATE INDEX idx_blog_posts_slug ON blog_posts(slug);
+
+-- Trigger to auto-update updated_at
+CREATE TRIGGER update_blog_posts_updated_at BEFORE UPDATE ON blog_posts
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- Enable RLS
+ALTER TABLE blog_posts ENABLE ROW LEVEL SECURITY;
+
+-- Anyone can read published blog posts
+CREATE POLICY "Published blog posts are viewable by everyone" ON blog_posts
+  FOR SELECT USING (published = TRUE);
+
+-- Grant full access to service_role for blog_posts (bypasses RLS)
+GRANT ALL ON blog_posts TO service_role;

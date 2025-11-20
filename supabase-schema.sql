@@ -13,6 +13,7 @@ CREATE TABLE users (
   avatar_url TEXT,
   html_url TEXT,
   access_token TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'admin')),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -261,6 +262,19 @@ CREATE POLICY "Users can update their own symbol edits"
 CREATE POLICY "Users can delete their own symbol edits"
   ON symbol_edits FOR DELETE
   USING (auth.uid() = user_id);
+
+-- Add role column with default value 'user'
+ALTER TABLE users
+ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'user'
+CHECK (role IN ('user', 'admin'));
+
+-- Update your admin user (replace with your actual github_login if different)
+UPDATE users
+SET role = 'admin'
+WHERE github_login = 'xandwr';
+
+-- Verify the migration
+SELECT github_login, role FROM users;
 
 -- Grant permissions to service_role (bypasses RLS)
 GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role;
